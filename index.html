@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        body {
+            background-color: #08000f;
+            margin: 0px;
+            overflow: hidden;
+        }
+
+        #threeCanvas {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <script type="importmap">
+        {
+          "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.145.0/build/three.module.js",
+        "loader": "https://cdn.jsdelivr.net/npm/three@0.145.0/examples/jsm/loaders/GLTFLoader.js",
+        "effectComposer":"https://cdn.jsdelivr.net/npm/three@0.145.0/examples/jsm/postprocessing/EffectComposer.js",
+        "renderPass":"https://cdn.jsdelivr.net/npm/three@0.145.0/examples/jsm/postprocessing/RenderPass.js",
+        "bloom":"https://cdn.jsdelivr.net/npm/three@0.145.0/examples/jsm/postprocessing/UnrealBloomPass.js"
+          }
+        }
+    </script>
+    <canvas id="threeCanvas"></canvas>
+
+    <script type="module">
+
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'loader';
+        import { EffectComposer } from 'effectComposer';
+        import { UnrealBloomPass } from 'bloom';
+        import { RenderPass } from 'renderPass';
+
+        const loader = new GLTFLoader();
+
+        let speed = { x: 0, y: 0 };
+        const maxSpeed = 0.5;
+        let toScroll = 0;
+        let scrollY = 0;
+        let scrollYlerp = 0;
+        let prevMousePos = { x: -0.1, y: -100 }
+
+
+        let renderer, camera, scene;
+        let points = [];
+
+        let planet;
+        let planetStartPosition = ({ x: null, y: null });
+
+        let sun;
+
+        let bloomComposer;
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = .8;
+        bloomPass.strength = 1;
+        bloomPass.radius = .2;
+
+        window.addEventListener('resize', onWindowResize, false);
+
+        var timer;
+        function mouseStopped() {
+            speed.x = 0;
+            speed.y = 0;
+        }
+        onmousemove = (event) => {
+            if (prevMousePos.x == -0.1) { prevMousePos.x = event.x; prevMousePos.y = event.y; }
+            speed.x = (prevMousePos.x - event.x) * 0.05;
+            speed.y = (prevMousePos.y - event.y) * 0.05;
+            prevMousePos.x = event.x;
+            prevMousePos.y = event.y;
+            clearTimeout(timer);
+            timer = setTimeout(mouseStopped, 1);
+        };
+
+        addEventListener('wheel', (event) => { });
+        onwheel = (event) => {
+            scrollY += event.deltaY / 100;
+            if (scrollY > 10) {
+                scrollY = 10;
+            } else if (scrollY < 0) {
+                scrollY = 0;
+            } else {
+                toScroll += event.deltaY;
+            }
+        };
+
+
+
+
+        init();
+        animate();
+
+
+        function init() {
+            const canvas = document.getElementById("threeCanvas");
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color("#08000f");
+            renderer = new THREE.WebGLRenderer({ canvas: canvas });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 1000);
+            camera.position.set(0, 0, 100);
+            camera.lookAt(0, 0, 0);
+
+            bloomComposer = new EffectComposer(renderer);
+            const renderScene = new RenderPass(scene, camera);
+            bloomComposer.addPass(renderScene);
+            bloomComposer.addPass(bloomPass);
+
+            for (let i = 0; i < 300; i++) {
+                let posZ = THREE.MathUtils.randFloat(-50, -500);
+                let xMin = (camera.position.z - posZ) * Math.tan((camera.fov / 2) * (Math.PI / 180)) * camera.aspect;
+                let yMin = (camera.position.z - posZ) * Math.tan((camera.fov / 2) * (Math.PI / 180));
+                let posX = camera.position.x + THREE.MathUtils.randFloat(-xMin, xMin);
+                let posY = camera.position.y + THREE.MathUtils.randFloat(-yMin, yMin);
+
+                var star = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+                var material = new THREE.PointsMaterial({ color: 0xffffff });
+                var pointStar = new THREE.Points(star, material);
+                pointStar.position.set(posX, posY, posZ);
+                points.push({ s: pointStar, minX: -xMin, maxX: xMin, minY: -yMin, maxY: yMin });
+                if (i == 0) {
+                    console.log(points[i].maxX);
+                }
+                scene.add(pointStar);
+            }
+
+            const sunGeometry = new THREE.SphereGeometry(15, 32, 16);
+            const sunMaterial = new THREE.MeshStandardMaterial({ color: 0xffff80, emissive: 0xffff80, emissiveIntensity:1 });
+            sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            sun.position.z = -300;
+            scene.add(sun);
+
+            const light = new THREE.DirectionalLight(0xFFFFFF, 2);
+            light.position.x = -1;
+            scene.add(light);
+
+            loader.load(
+                'Models/Earth.glb',
+                function (gltf) {
+                    planet = gltf.scene;
+                    gltf.scene.scale.set(0.08, 0.08, 0.08);
+                    gltf.scene.position.x = camera.position.z * Math.tan((camera.fov / 2) * (Math.PI / 180)) * camera.aspect - 10;
+                    gltf.scene.position.y = -camera.position.z * Math.tan((camera.fov / 2) * (Math.PI / 180)) + 10;
+                    scene.add(gltf.scene);
+                },
+                function (error) {
+
+                    console.log('An error happened');
+                }
+            );
+
+            onWindowResize();
+        }
+
+        function animate() {
+
+            if (speed.x > maxSpeed) { speed.x = maxSpeed; } else if (speed.x < -maxSpeed) { speed.x = -maxSpeed };
+            if (speed.y > maxSpeed) { speed.y = maxSpeed; } else if (speed.y < -maxSpeed) { speed.y = -maxSpeed };
+            if (toScroll != 0 || speed.x != 0 || speed.y != 0) {
+                for (let i = 0; i < points.length; i++) {
+                    points[i].s.position.x += speed.x;
+                    points[i].s.position.y += speed.y + toScroll * 0.1;
+                    if (points[i].s.position.x > points[i].maxX) {
+                        points[i].s.position.x = points[i].minX;
+                    } else
+                        if (points[i].s.position.x < points[i].minX) {
+                            points[i].s.position.x = points[i].maxX;
+                        }
+                    if (points[i].s.position.y > points[i].maxY) {
+                        points[i].s.position.y = points[i].minY;
+                    } else
+                        if (points[i].s.position.y < points[i].minY) {
+                            points[i].s.position.y = points[i].maxY;
+                        }
+                }
+                toScroll = lerp(toScroll, 0, 0.1);
+            }
+            movePlanet();
+            moveSun();
+            render();
+            requestAnimationFrame(animate);
+        }
+
+
+        function movePlanet() {
+            scrollYlerp = lerp(scrollYlerp, scrollY, 0.1);
+            if (planet != null) {
+                if (planetStartPosition.x == null) {
+                    planetStartPosition.x = planet.position.x;
+                    planetStartPosition.y = planet.position.y;
+                }
+                planet.rotation.y = lerp(0, 170 * Math.PI / 180, scrollYlerp / 10);;
+                planet.position.x = lerp(planetStartPosition.x, 0, scrollYlerp / 10);
+                planet.position.z = lerp(0, 50, scrollYlerp / 10);
+                planet.position.y = lerp(planetStartPosition.y, -25, scrollYlerp / 10);
+            }
+        }
+
+        function moveSun()
+        {
+            sun.position.y = lerp(0, 135, scrollYlerp / 10);
+            var lerpScale = lerp(1, 3, scrollYlerp / 10);
+            sun.scale.set(lerpScale, lerpScale, lerpScale);
+        }
+
+        function lerp(start, end, amt) {
+            return (1 - amt) * start + amt * end
+        }
+
+        function render() {
+            //renderer.render(scene, camera);
+            bloomComposer.render();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+    </script>
+
+</body>
+</html>
